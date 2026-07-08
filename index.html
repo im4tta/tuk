@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tuk — paste, capture, keep</title>
+<meta name="description" content="Tuk is a fast, local-first screenshot scratchpad. Paste, capture your screen at up to 4× resolution, caption, and export — all in your browser, nothing uploaded.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <div class="toolbar">
+    <div class="brand">
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><circle cx="8" cy="7" r="0.5" fill="white"/></svg>
+      </div>
+      Tuk
+    </div>
+
+    <span class="counts" id="counts">0 shots</span>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="text" id="searchInput" class="search-input" placeholder="Search captions & notes…">
+    </div>
+
+    <select class="select" id="sortSelect" title="Sort order">
+      <option value="new">Newest first</option>
+      <option value="old">Oldest first</option>
+      <option value="largest">Largest file</option>
+      <option value="name">Caption A–Z</option>
+    </select>
+
+    <div class="capture-group">
+      <button class="btn primary" id="btnCapture">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Capture screen
+      </button>
+      <select class="select" id="scaleSelect" title="Output resolution multiplier">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+        <option value="4" selected>4× res</option>
+      </select>
+    </div>
+
+    <button class="btn" id="btnPasteClipboard" title="Read an image from your system clipboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+      Paste from clipboard
+    </button>
+
+    <label class="switch-wrap" title="Automatically copy every screen capture to your system clipboard so you can paste it elsewhere">
+      <span class="switch"><input type="checkbox" id="toggleAutoCopy" checked><span class="switch-track"></span></span>
+      Auto-copy captures
+    </label>
+
+    <button class="btn" id="btnSelectAll">Select all</button>
+    <button class="btn" id="btnExportZip" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      Export selected
+    </button>
+    <button class="btn danger" id="btnDelete" disabled>Delete selected</button>
+  </div>
+
+  <main>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-4 4-3-3-5 5"/></svg>
+      </div>
+      <h2>Paste a screenshot to get started</h2>
+      <p>Press <kbd>Ctrl</kbd>+<kbd>V</kbd> (or <kbd>⌘</kbd>+<kbd>V</kbd> on Mac) anywhere on this page, drag image files in, or click <strong>Capture screen</strong> above.</p>
+    </div>
+
+    <div class="grid hidden" id="grid"></div>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
