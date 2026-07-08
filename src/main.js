@@ -15,6 +15,7 @@ const btnDelete = document.getElementById('btnDelete');
 const btnCapture = document.getElementById('btnCapture');
 const scaleSelect = document.getElementById('scaleSelect');
 const btnPasteClipboard = document.getElementById('btnPasteClipboard');
+const floatingPaste = document.getElementById('floatingPaste');
 const toggleAutoCopy = document.getElementById('toggleAutoCopy');
 const searchInput = document.getElementById('searchInput');
 const sortSelect = document.getElementById('sortSelect');
@@ -404,6 +405,7 @@ btnDelete.addEventListener('click', () => {
 
 btnCapture.addEventListener('click', handleCapture);
 btnPasteClipboard.addEventListener('click', handlePasteFromClipboardButton);
+floatingPaste.addEventListener('click', handlePasteFromClipboardButton);
 toggleAutoCopy.addEventListener('change', saveSettings);
 scaleSelect.addEventListener('change', saveSettings);
 sortSelect.addEventListener('change', () => { saveSettings(); render(); });

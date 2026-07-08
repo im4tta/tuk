@@ -308,6 +308,45 @@
     color:var(--ink-faint); font-family:var(--font-body); font-size:14px;
   }
 
+  /* ---------- Floating Paste Button ---------- */
+  .floating-paste{
+    position:fixed;
+    bottom:24px;
+    right:24px;
+    z-index:50;
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    background:linear-gradient(135deg, var(--accent), #6C7CF0);
+    border:none;
+    color:#fff;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 4px 16px rgba(54,82,224,0.4);
+    transition:transform .15s, box-shadow .15s;
+  }
+  .floating-paste:hover{
+    transform:scale(1.08);
+    box-shadow:0 6px 24px rgba(54,82,224,0.5);
+  }
+  .floating-paste:active{
+    transform:scale(0.95);
+  }
+  .floating-paste svg{
+    width:24px;
+    height:24px;
+  }
+  .floating-paste.has-image{
+    animation:pulse 1.5s infinite;
+  }
+  @keyframes pulse{
+    0%, 100%{ box-shadow:0 4px 16px rgba(54,82,224,0.4); }
+    50%{ box-shadow:0 4px 24px rgba(54,82,224,0.6), 0 0 0 8px rgba(54,82,224,0.15); }
+  }
+
   @media (prefers-reduced-motion: reduce){
     .toast{ animation:none; }
+    .floating-paste.has-image{ animation:none; }
   }
