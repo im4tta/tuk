@@ -1,0 +1,58 @@
+name: Simple macOS Build for Clipa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install PyQt6 pyperclip pyinstaller pillow
+    
+    - name: Build app
+      run: |
+        echo "Building Clipa..."
+        pyinstaller --onedir --windowed \
+          --name=Clipa \
+          --icon=app_icon.png \
+          --add-data="NotoSansKhmer.ttf:." \
+          --add-data="app_icon.png:." \
+          main.py
+        echo "Build completed, checking output:"
+        ls -la dist/
+    
+    - name: Create DMG
+      run: |
+        echo "Creating DMG..."
+        DMG_NAME="Clipa-macOS.dmg"
+        
+        # Create temp directory for DMG contents
+        mkdir -p temp_dmg
+        cp -R "dist/Clipa.app" temp_dmg/
+        ln -s /Applications temp_dmg/Applications
+        
+        # Create DMG using hdiutil
+        hdiutil create -volname "Clipa" -srcfolder temp_dmg -ov -format UDZO "$DMG_NAME"
+        
+        # Cleanup and verify
+        rm -rf temp_dmg
+        ls -la *.dmg
+        echo "DMG size: $(du -h "$DMG_NAME" | cut -f1)"
+    
+    - name: Upload DMG
+      uses: actions/upload-artifact@v4
+      with:
+        name: Clipa-macOS-DMG
+        path: Clipa-macOS.dmg
