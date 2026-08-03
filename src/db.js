@@ -8,8 +8,21 @@ let dbPromise = null;
 
 function openDB() {
   if (dbPromise) return dbPromise;
+  // Some environments (older Safari private-browsing, locked-down webviews)
+  // don't expose indexedDB at all — fail predictably instead of throwing a
+  // ReferenceError deep inside the IDBRequest machinery.
+  if (typeof indexedDB === 'undefined') {
+    dbPromise = Promise.reject(new Error('IndexedDB is not available in this browser.'));
+    return dbPromise;
+  }
   dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let req;
+    try {
+      req = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) {
+      reject(e);
+      return;
+    }
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
@@ -17,6 +30,7 @@ function openDB() {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('IndexedDB open was blocked by another open tab.'));
   });
   return dbPromise;
 }

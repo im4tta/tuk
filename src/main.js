@@ -27,6 +27,7 @@ let selected = new Set();
 let saveTimers = {};
 let searchTerm = '';
 let lightboxIndex = -1;
+let lightboxList = []; // snapshot of the visible (filtered/sorted) list the lightbox is paging through
 let capturing = false;
 
 // ---------- Settings (small, safe for localStorage) ----------
@@ -49,6 +50,17 @@ function saveSettings() {
   } catch (e) { /* non-fatal */ }
 }
 
+// ---------- Accessibility helper ----------
+// Native <button> elements get Enter/Space activation for free; the compact
+// icon controls here are `div`s (for tighter styling control), so wire that
+// behavior up manually wherever we set role="button".
+function onActivate(el, handler) {
+  el.addEventListener('click', handler);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); }
+  });
+}
+
 // ---------- Core actions ----------
 function getImageSizeFromBlob(blob) {
   return new Promise((resolve) => {
@@ -62,6 +74,10 @@ function getImageSizeFromBlob(blob) {
 
 async function addScreenshotFromBlob(blob, mime) {
   const { width, height, url } = await getImageSizeFromBlob(blob);
+  if (!url) {
+    toast('That image could not be read — it may be corrupt or an unsupported format.', 'err');
+    return null;
+  }
   const shot = {
     id: makeId(),
     url, blob,
@@ -85,16 +101,26 @@ async function addScreenshot(file) {
 
 function scheduleSave(shot) {
   clearTimeout(saveTimers[shot.id]);
-  saveTimers[shot.id] = setTimeout(() => persistMeta(shot), 500);
+  saveTimers[shot.id] = setTimeout(() => {
+    delete saveTimers[shot.id];
+    persistMeta(shot);
+  }, 500);
 }
 
 async function deleteShots(ids) {
   const idSet = new Set(ids);
   shots.forEach((s) => { if (idSet.has(s.id) && s.url) URL.revokeObjectURL(s.url); });
   shots = shots.filter((s) => !idSet.has(s.id));
-  ids.forEach((id) => selected.delete(id));
+  ids.forEach((id) => {
+    selected.delete(id);
+    clearTimeout(saveTimers[id]);
+    delete saveTimers[id];
+  });
+  // If the lightbox was showing one of the deleted shots, close it rather
+  // than silently pointing at a now-stale index.
+  if (lightboxIndex >= 0 && idSet.has((lightboxList[lightboxIndex] || {}).id)) closeLightbox();
   render();
-  for (const id of ids) await deleteShotFromStorage(id);
+  await Promise.all(ids.map((id) => deleteShotFromStorage(id)));
 }
 
 function toggleSelect(id) {
@@ -124,9 +150,11 @@ async function handleCapture() {
   try {
     const { blob, width, height } = await captureScreen(scale);
     const shot = await addScreenshotFromBlob(blob, 'image/png');
-    toast('Captured at ' + shot.width + '\u00d7' + shot.height + ' (' + scale + '\u00d7 res) and added to your stack.');
+    if (shot) {
+      toast('Captured at ' + shot.width + '\u00d7' + shot.height + ' (' + scale + '\u00d7 res) and added to your stack.');
+    }
 
-    if (toggleAutoCopy.checked) {
+    if (shot && toggleAutoCopy.checked) {
       try {
         await copyBlobToClipboard(blob);
         toast('Also copied to clipboard — paste it anywhere.');
@@ -145,9 +173,12 @@ async function handleCapture() {
 async function handlePasteFromClipboardButton() {
   try {
     const found = await readImagesFromClipboard();
-    for (const { blob, mime } of found) await addScreenshotFromBlob(blob, mime);
-    if (found.length > 0) toast(found.length + ' image' + (found.length > 1 ? 's' : '') + ' added from clipboard.');
-    else toast('No image found on the clipboard.', 'warn');
+    let added = 0;
+    for (const { blob, mime } of found) {
+      if (await addScreenshotFromBlob(blob, mime)) added += 1;
+    }
+    if (added > 0) toast(added + ' image' + (added > 1 ? 's' : '') + ' added from clipboard.');
+    else if (found.length === 0) toast('No image found on the clipboard.', 'warn');
   } catch (e) {
     toast(e.message, 'err');
   }
@@ -182,7 +213,11 @@ function updateToolbar() {
   countsEl.textContent = label;
   btnExportZip.disabled = selected.size === 0;
   btnDelete.disabled = selected.size === 0;
-  btnSelectAll.textContent = (selected.size === shots.length && shots.length > 0) ? 'Deselect all' : 'Select all';
+  // "Select all" acts on whatever's currently visible (respects an active
+  // search), so its label reflects whether every *visible* shot is selected —
+  // not the whole library, which could include shots the user can't even see.
+  const allVisibleSelected = visible.length > 0 && visible.every((s) => selected.has(s.id));
+  btnSelectAll.textContent = allVisibleSelected ? 'Deselect all' : 'Select all';
 }
 
 function render() {
@@ -200,8 +235,7 @@ function render() {
     return;
   }
 
-  visible.forEach((shot) => {
-    const index = shots.indexOf(shot);
+  visible.forEach((shot, i) => {
     const card = document.createElement('div');
     card.className = 'card' + (selected.has(shot.id) ? ' selected' : '');
     card.dataset.id = shot.id;
@@ -213,12 +247,16 @@ function render() {
     img.loading = 'lazy';
     img.alt = shot.caption || 'Screenshot';
     thumbWrap.appendChild(img);
-    thumbWrap.addEventListener('click', () => openLightbox(index));
+    thumbWrap.addEventListener('click', () => openLightbox(visible, i));
 
     const checkbox = document.createElement('div');
     checkbox.className = 'checkbox' + (selected.has(shot.id) ? ' checked' : '');
     checkbox.innerHTML = icons.check;
-    checkbox.addEventListener('click', (e) => { e.stopPropagation(); toggleSelect(shot.id); });
+    checkbox.setAttribute('role', 'checkbox');
+    checkbox.setAttribute('tabindex', '0');
+    checkbox.setAttribute('aria-checked', String(selected.has(shot.id)));
+    checkbox.setAttribute('aria-label', 'Select screenshot');
+    onActivate(checkbox, (e) => { e.stopPropagation(); toggleSelect(shot.id); });
 
     const iconRow = document.createElement('div');
     iconRow.className = 'icon-btn-row';
@@ -227,19 +265,28 @@ function render() {
     dlBtn.className = 'icon-btn';
     dlBtn.innerHTML = icons.download;
     dlBtn.title = 'Download PNG';
-    dlBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadSingle(shot); });
+    dlBtn.setAttribute('role', 'button');
+    dlBtn.setAttribute('tabindex', '0');
+    dlBtn.setAttribute('aria-label', 'Download PNG');
+    onActivate(dlBtn, (e) => { e.stopPropagation(); downloadSingle(shot); });
 
     const copyBtn = document.createElement('div');
     copyBtn.className = 'icon-btn';
     copyBtn.innerHTML = icons.copy;
     copyBtn.title = 'Copy to clipboard';
-    copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyShotToClipboard(shot); });
+    copyBtn.setAttribute('role', 'button');
+    copyBtn.setAttribute('tabindex', '0');
+    copyBtn.setAttribute('aria-label', 'Copy to clipboard');
+    onActivate(copyBtn, (e) => { e.stopPropagation(); copyShotToClipboard(shot); });
 
     const delBtn = document.createElement('div');
     delBtn.className = 'icon-btn';
     delBtn.innerHTML = icons.trash;
     delBtn.title = 'Delete';
-    delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteShots([shot.id]); });
+    delBtn.setAttribute('role', 'button');
+    delBtn.setAttribute('tabindex', '0');
+    delBtn.setAttribute('aria-label', 'Delete screenshot');
+    onActivate(delBtn, (e) => { e.stopPropagation(); deleteShots([shot.id]); });
 
     iconRow.appendChild(dlBtn);
     iconRow.appendChild(copyBtn);
@@ -280,7 +327,8 @@ function render() {
 }
 
 // ---------- Lightbox ----------
-function openLightbox(index) {
+function openLightbox(list, index) {
+  lightboxList = list;
   lightboxIndex = index;
   renderLightbox();
 }
@@ -288,12 +336,13 @@ function closeLightbox() {
   const el = document.querySelector('.lightbox');
   if (el) el.remove();
   lightboxIndex = -1;
+  lightboxList = [];
 }
 function renderLightbox() {
   const existing = document.querySelector('.lightbox');
   if (existing) existing.remove();
-  if (lightboxIndex < 0 || lightboxIndex >= shots.length) return;
-  const shot = shots[lightboxIndex];
+  if (lightboxIndex < 0 || lightboxIndex >= lightboxList.length) return;
+  const shot = lightboxList[lightboxIndex];
 
   const overlay = document.createElement('div');
   overlay.className = 'lightbox';
@@ -312,21 +361,30 @@ function renderLightbox() {
 
   const closeBtn = document.createElement('div');
   closeBtn.className = 'lightbox-close';
+  closeBtn.setAttribute('role', 'button');
+  closeBtn.setAttribute('tabindex', '0');
+  closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   closeBtn.addEventListener('click', closeLightbox);
   overlay.appendChild(closeBtn);
 
-  if (shots.length > 1) {
+  if (lightboxList.length > 1) {
     const prev = document.createElement('div');
     prev.className = 'lightbox-nav prev';
+    prev.setAttribute('role', 'button');
+    prev.setAttribute('tabindex', '0');
+    prev.setAttribute('aria-label', 'Previous screenshot');
     prev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
-    prev.addEventListener('click', (e) => { e.stopPropagation(); lightboxIndex = (lightboxIndex - 1 + shots.length) % shots.length; renderLightbox(); });
+    prev.addEventListener('click', (e) => { e.stopPropagation(); lightboxIndex = (lightboxIndex - 1 + lightboxList.length) % lightboxList.length; renderLightbox(); });
     overlay.appendChild(prev);
 
     const next = document.createElement('div');
     next.className = 'lightbox-nav next';
+    next.setAttribute('role', 'button');
+    next.setAttribute('tabindex', '0');
+    next.setAttribute('aria-label', 'Next screenshot');
     next.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
-    next.addEventListener('click', (e) => { e.stopPropagation(); lightboxIndex = (lightboxIndex + 1) % shots.length; renderLightbox(); });
+    next.addEventListener('click', (e) => { e.stopPropagation(); lightboxIndex = (lightboxIndex + 1) % lightboxList.length; renderLightbox(); });
     overlay.appendChild(next);
   }
 
@@ -336,8 +394,8 @@ function renderLightbox() {
 document.addEventListener('keydown', (e) => {
   if (lightboxIndex < 0) return;
   if (e.key === 'Escape') closeLightbox();
-  if (e.key === 'ArrowLeft') { lightboxIndex = (lightboxIndex - 1 + shots.length) % shots.length; renderLightbox(); }
-  if (e.key === 'ArrowRight') { lightboxIndex = (lightboxIndex + 1) % shots.length; renderLightbox(); }
+  if (e.key === 'ArrowLeft') { lightboxIndex = (lightboxIndex - 1 + lightboxList.length) % lightboxList.length; renderLightbox(); }
+  if (e.key === 'ArrowRight') { lightboxIndex = (lightboxIndex + 1) % lightboxList.length; renderLightbox(); }
 });
 
 // ---------- Paste & Drag/Drop ----------
@@ -350,8 +408,10 @@ document.addEventListener('paste', async (e) => {
       handledImage = true;
       const file = item.getAsFile();
       if (file) {
-        try { await addScreenshot(file); toast('Screenshot added.'); }
-        catch (err) { toast('Could not read pasted image.', 'err'); }
+        try {
+          const shot = await addScreenshot(file);
+          if (shot) toast('Screenshot added.');
+        } catch (err) { toast('Could not read pasted image.', 'err'); }
       }
     }
   }
@@ -368,16 +428,19 @@ document.addEventListener('drop', async (e) => {
   e.preventDefault();
   const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
   if (files.length === 0) return;
+  let added = 0;
   for (const file of files) {
-    try { await addScreenshot(file); } catch (err) { /* skip */ }
+    try { if (await addScreenshot(file)) added += 1; } catch (err) { /* skip */ }
   }
-  toast(files.length + ' image' + (files.length > 1 ? 's' : '') + ' added.');
+  if (added > 0) toast(added + ' image' + (added > 1 ? 's' : '') + ' added.');
 });
 
 // ---------- Toolbar events ----------
 btnSelectAll.addEventListener('click', () => {
-  if (selected.size === shots.length && shots.length > 0) selected.clear();
-  else selected = new Set(shots.map((s) => s.id));
+  const visible = visibleShots();
+  const allVisibleSelected = visible.length > 0 && visible.every((s) => selected.has(s.id));
+  if (allVisibleSelected) visible.forEach((s) => selected.delete(s.id));
+  else visible.forEach((s) => selected.add(s.id));
   render();
 });
 

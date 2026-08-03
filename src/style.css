@@ -350,3 +350,15 @@
     .toast{ animation:none; }
     .floating-paste.has-image{ animation:none; }
   }
+
+  /* ---------- Keyboard focus ---------- */
+  /* These controls are divs with role="button"/"checkbox" for tighter layout
+     control, so give them an explicit, on-brand focus ring instead of
+     relying on (or losing) the browser default. */
+  .checkbox:focus-visible,
+  .icon-btn:focus-visible,
+  .lightbox-close:focus-visible,
+  .lightbox-nav:focus-visible{
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
