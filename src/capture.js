@@ -10,6 +10,11 @@
  * @param {number} scale 1, 2, or 4
  * @returns {Promise<{blob: Blob, width: number, height: number}>}
  */
+// Most desktop browsers support canvases well beyond this, but some cap out
+// lower; staying under 16384px per side keeps captures reliable even on a
+// 4x-scaled ultrawide/5K display instead of failing at the toBlob() step.
+const MAX_CANVAS_DIMENSION = 16384;
+
 export async function captureScreen(scale = 4) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
     throw new Error('Screen capture isn\u2019t supported in this browser.');
@@ -34,9 +39,10 @@ export async function captureScreen(scale = 4) {
 
     const srcW = video.videoWidth || 1920;
     const srcH = video.videoHeight || 1080;
+    const effectiveScale = Math.min(scale, MAX_CANVAS_DIMENSION / srcW, MAX_CANVAS_DIMENSION / srcH);
     const canvas = document.createElement('canvas');
-    canvas.width = srcW * scale;
-    canvas.height = srcH * scale;
+    canvas.width = Math.round(srcW * effectiveScale);
+    canvas.height = Math.round(srcH * effectiveScale);
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -49,7 +55,7 @@ export async function captureScreen(scale = 4) {
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1.0));
     if (!blob) throw new Error('Could not encode the capture as PNG.');
 
-    return { blob, width: canvas.width, height: canvas.height };
+    return { blob, width: canvas.width, height: canvas.height, scale: effectiveScale };
   } finally {
     if (stream) stream.getTracks().forEach((t) => t.stop());
   }
@@ -62,6 +68,7 @@ async function blobToPng(blob) {
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
   canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close(); // release the decoded bitmap immediately rather than waiting on GC
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 

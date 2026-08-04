@@ -51,9 +51,25 @@ tuk/
     ├── db.js              # IndexedDB persistence layer
     ├── capture.js          # getDisplayMedia capture + clipboard read/write
     ├── export.js            # ZIP export + single-file download
-    ├── utils.js               # formatting helpers + inline icons
+    ├── utils.js               # formatting/sort/filter helpers + inline icons
     └── toast.js                # toast notifications
+test/
+├── utils.test.js       # pure formatting/sort/filter helpers
+└── export.test.js      # ZIP export contents + single-file download
 ```
+
+## Development
+
+```
+npm install
+npm run dev      # local dev server
+npm run build    # production build to dist/
+npm run test     # run the vitest suite (utils + export logic)
+npm run lint     # eslint
+```
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs lint, tests, and
+the build on every push and pull request against `main`.
 
 ## Browser support notes
 

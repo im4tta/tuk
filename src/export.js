@@ -22,9 +22,9 @@ export async function exportShotsAsZip(items) {
       '  Size: ' + s.width + '\u00d7' + s.height + ', ' + fmtBytes(s.sizeBytes) + '\n'
     );
   });
-  zip.file('captions-and-notes.txt', notesLines.join('\n'));
+  zip.file('captions-and-notes.txt', notesLines.join('\n'), { compression: 'DEFLATE' });
 
-  const blob = await zip.generateAsync({ type: 'blob' });
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

@@ -1,5 +1,5 @@
 import './style.css';
-import { fmtBytes, timeAgo, makeId, icons } from './utils.js';
+import { fmtBytes, timeAgo, makeId, icons, filterShotsByQuery, sortShots } from './utils.js';
 import { toast } from './toast.js';
 import { persistShot, persistMeta, deleteShotFromStorage, loadAll } from './db.js';
 import { captureScreen, copyBlobToClipboard, readImagesFromClipboard } from './capture.js';
@@ -23,8 +23,8 @@ const sortSelect = document.getElementById('sortSelect');
 // ---------- State ----------
 /** @type {Array<{id:string,url:string,blob:Blob,mime:string,width:number,height:number,sizeBytes:number,caption:string,notes:string,createdAt:number}>} */
 let shots = [];
-let selected = new Set();
-let saveTimers = {};
+const selected = new Set();
+const saveTimers = {};
 let searchTerm = '';
 let lightboxIndex = -1;
 let lightboxList = []; // snapshot of the visible (filtered/sorted) list the lightbox is paging through
@@ -38,7 +38,7 @@ function loadSettings() {
     toggleAutoCopy.checked = s.autoCopy !== false;
     scaleSelect.value = s.scale || '4';
     sortSelect.value = s.sort || 'new';
-  } catch (e) { /* defaults stand */ }
+  } catch { /* defaults stand */ }
 }
 function saveSettings() {
   try {
@@ -47,7 +47,7 @@ function saveSettings() {
       scale: scaleSelect.value,
       sort: sortSelect.value
     }));
-  } catch (e) { /* non-fatal */ }
+  } catch { /* non-fatal */ }
 }
 
 // ---------- Accessibility helper ----------
@@ -148,17 +148,21 @@ async function handleCapture() {
   btnCapture.textContent = 'Choose a screen\u2026';
 
   try {
-    const { blob, width, height } = await captureScreen(scale);
+    const { blob, scale: effectiveScale } = await captureScreen(scale);
     const shot = await addScreenshotFromBlob(blob, 'image/png');
     if (shot) {
-      toast('Captured at ' + shot.width + '\u00d7' + shot.height + ' (' + scale + '\u00d7 res) and added to your stack.');
+      const roundedScale = Math.round(effectiveScale * 10) / 10;
+      const scaleNote = roundedScale < scale
+        ? roundedScale + '\u00d7 res \u2014 clamped down from ' + scale + '\u00d7 for a display this large'
+        : scale + '\u00d7 res';
+      toast('Captured at ' + shot.width + '\u00d7' + shot.height + ' (' + scaleNote + ') and added to your stack.');
     }
 
     if (shot && toggleAutoCopy.checked) {
       try {
         await copyBlobToClipboard(blob);
         toast('Also copied to clipboard — paste it anywhere.');
-      } catch (e) { /* clipboard permission denied — capture itself still succeeded */ }
+      } catch { /* clipboard permission denied — capture itself still succeeded */ }
     }
   } catch (err) {
     if (err && err.name === 'NotAllowedError') toast('Screen capture cancelled.');
@@ -190,22 +194,10 @@ function totalBytes() {
 }
 
 function visibleShots() {
-  let list = shots;
-  if (searchTerm) {
-    const q = searchTerm.toLowerCase();
-    list = list.filter((s) => (s.caption || '').toLowerCase().includes(q) || (s.notes || '').toLowerCase().includes(q));
-  }
-  const sortBy = sortSelect.value;
-  list = list.slice();
-  if (sortBy === 'old') list.sort((a, b) => a.createdAt - b.createdAt);
-  else if (sortBy === 'largest') list.sort((a, b) => b.sizeBytes - a.sizeBytes);
-  else if (sortBy === 'name') list.sort((a, b) => (a.caption || '').localeCompare(b.caption || ''));
-  else list.sort((a, b) => b.createdAt - a.createdAt);
-  return list;
+  return sortShots(filterShotsByQuery(shots, searchTerm), sortSelect.value);
 }
 
-function updateToolbar() {
-  const visible = visibleShots();
+function updateToolbar(visible) {
   let label = shots.length + ' shot' + (shots.length !== 1 ? 's' : '');
   if (searchTerm) label += ' · ' + visible.length + ' match' + (visible.length !== 1 ? 'es' : '');
   if (shots.length) label += ' · ' + fmtBytes(totalBytes());
@@ -221,8 +213,8 @@ function updateToolbar() {
 }
 
 function render() {
-  updateToolbar();
   const visible = visibleShots();
+  updateToolbar(visible);
   dropzone.classList.toggle('hidden', shots.length > 0);
   grid.classList.toggle('hidden', shots.length === 0);
   grid.innerHTML = '';
@@ -411,7 +403,7 @@ document.addEventListener('paste', async (e) => {
         try {
           const shot = await addScreenshot(file);
           if (shot) toast('Screenshot added.');
-        } catch (err) { toast('Could not read pasted image.', 'err'); }
+        } catch { toast('Could not read pasted image.', 'err'); }
       }
     }
   }
@@ -430,7 +422,7 @@ document.addEventListener('drop', async (e) => {
   if (files.length === 0) return;
   let added = 0;
   for (const file of files) {
-    try { if (await addScreenshot(file)) added += 1; } catch (err) { /* skip */ }
+    try { if (await addScreenshot(file)) added += 1; } catch { /* skip */ }
   }
   if (added > 0) toast(added + ' image' + (added > 1 ? 's' : '') + ' added.');
 });
@@ -457,7 +449,7 @@ btnExportZip.addEventListener('click', async () => {
     toast('Export failed: ' + e.message, 'err');
   } finally {
     btnExportZip.innerHTML = originalLabel;
-    updateToolbar();
+    updateToolbar(visibleShots());
   }
 });
 
@@ -472,6 +464,28 @@ floatingPaste.addEventListener('click', handlePasteFromClipboardButton);
 toggleAutoCopy.addEventListener('change', saveSettings);
 scaleSelect.addEventListener('change', saveSettings);
 sortSelect.addEventListener('change', () => { saveSettings(); render(); });
+
+// ---------- Floating-paste "clipboard has an image" hint ----------
+// style.css already defines a `.has-image` pulse animation on the floating
+// paste button, but nothing ever applied the class — the hint was dead.
+// This wires it up WITHOUT ever prompting for clipboard permission itself:
+// it only checks (and reads) the clipboard when 'clipboard-read' access was
+// already granted some other way (e.g. the person already used "Paste from
+// clipboard" once), so it can never surprise anyone with a permission popup.
+async function refreshClipboardHint() {
+  if (!navigator.permissions || !navigator.permissions.query || !document.hasFocus()) return;
+  try {
+    const status = await navigator.permissions.query({ name: 'clipboard-read' });
+    if (status.state !== 'granted') { floatingPaste.classList.remove('has-image'); return; }
+    const found = await readImagesFromClipboard();
+    floatingPaste.classList.toggle('has-image', found.length > 0);
+  } catch {
+    // Permission name unsupported (e.g. Firefox) or read rejected — just
+    // leave the hint off; this is a background nicety, not core function.
+  }
+}
+window.addEventListener('focus', refreshClipboardHint);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshClipboardHint(); });
 
 let searchDebounce;
 searchInput.addEventListener('input', () => {
@@ -489,6 +503,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---------- Init ----------
 loadSettings();
+refreshClipboardHint();
 loadAll()
   .then((loaded) => { shots = loaded; render(); })
   .catch(() => { toast('Could not open local storage — screenshots won\u2019t be saved between visits.', 'err'); render(); });

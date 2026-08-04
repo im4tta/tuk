@@ -55,50 +55,71 @@ async function idbGetAll(storeName) {
   });
 }
 
-async function idbDelete(storeName, id) {
+/**
+ * Run several put/delete ops across multiple stores in ONE transaction, so a
+ * shot's blob and its metadata are written or removed atomically. Without
+ * this, a tab closing between two separate transactions could leave an
+ * orphaned blob in IndexedDB forever (metadata gone, blob still taking up
+ * space, never reachable again).
+ * @param {Array<{store: string, op: 'put'|'delete', record?: object, id?: string}>} ops
+ */
+async function idbBatch(ops) {
   const db = await openDB();
+  const storeNames = [...new Set(ops.map((o) => o.store))];
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    tx.objectStore(storeName).delete(id);
+    const tx = db.transaction(storeNames, 'readwrite');
+    for (const op of ops) {
+      const store = tx.objectStore(op.store);
+      if (op.op === 'put') store.put(op.record);
+      else store.delete(op.id);
+    }
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
   });
 }
 
+function metaRecord(shot) {
+  return {
+    id: shot.id,
+    mime: shot.mime,
+    width: shot.width,
+    height: shot.height,
+    sizeBytes: shot.sizeBytes,
+    caption: shot.caption,
+    notes: shot.notes,
+    createdAt: shot.createdAt
+  };
+}
+
 /** Persist only the editable/lightweight fields — the blob store is untouched. */
 export async function persistMeta(shot) {
   try {
-    await idbPut('meta', {
-      id: shot.id,
-      mime: shot.mime,
-      width: shot.width,
-      height: shot.height,
-      sizeBytes: shot.sizeBytes,
-      caption: shot.caption,
-      notes: shot.notes,
-      createdAt: shot.createdAt
-    });
+    await idbPut('meta', metaRecord(shot));
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
 export async function persistShot(shot) {
   try {
-    await idbPut('blobs', { id: shot.id, blob: shot.blob });
-    await persistMeta(shot);
+    await idbBatch([
+      { store: 'blobs', op: 'put', record: { id: shot.id, blob: shot.blob } },
+      { store: 'meta', op: 'put', record: metaRecord(shot) }
+    ]);
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
 export async function deleteShotFromStorage(id) {
   try {
-    await idbDelete('meta', id);
-    await idbDelete('blobs', id);
-  } catch (e) {
+    await idbBatch([
+      { store: 'meta', op: 'delete', id },
+      { store: 'blobs', op: 'delete', id }
+    ]);
+  } catch {
     /* ignore */
   }
 }
@@ -107,12 +128,23 @@ export async function deleteShotFromStorage(id) {
 export async function loadAll() {
   const [metas, blobs] = await Promise.all([idbGetAll('meta'), idbGetAll('blobs')]);
   const blobById = new Map(blobs.map((b) => [b.id, b.blob]));
+  const metaIds = new Set(metas.map((m) => m.id));
   const loaded = [];
+  const orphanOps = [];
+
   for (const m of metas) {
     const blob = blobById.get(m.id);
-    if (!blob) continue;
+    if (!blob) { orphanOps.push({ store: 'meta', op: 'delete', id: m.id }); continue; }
     loaded.push({ ...m, blob, url: URL.createObjectURL(blob) });
   }
+  for (const b of blobs) {
+    if (!metaIds.has(b.id)) orphanOps.push({ store: 'blobs', op: 'delete', id: b.id });
+  }
+  // Best-effort cleanup of dangling records from any past interrupted write
+  // (e.g. a tab closed mid-save before this file's atomic-transaction fix).
+  // Never lets a cleanup failure block showing the person their shots.
+  if (orphanOps.length > 0) idbBatch(orphanOps).catch(() => {});
+
   loaded.sort((a, b) => b.createdAt - a.createdAt);
   return loaded;
 }
