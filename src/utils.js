@@ -24,6 +24,18 @@ export function extFromMime(mime) {
   return 'png';
 }
 
+/** Inverse of extFromMime, keyed off a filename — used when importing a ZIP. */
+export function mimeFromExt(filename) {
+  const ext = String(filename).split('.').pop().toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'bmp') return 'image/bmp';
+  if (ext === 'avif') return 'image/avif';
+  if (ext === 'svg') return 'image/svg+xml';
+  return 'image/png';
+}
+
 // Characters that are illegal (or awkward) in filenames on Windows/macOS/Linux.
 // eslint-disable-next-line no-control-regex
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|\x00-\x1F]/g;

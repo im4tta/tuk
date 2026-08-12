@@ -26,6 +26,26 @@ caption and search them, then export the batch as a ZIP.
   or caption A–Z.
 - **Bulk export** — select any subset and export as a ZIP, complete with a
   `captions-and-notes.txt` manifest.
+- **Range select** — `Shift`+click a checkbox to select everything between it
+  and the last one you clicked.
+- **Bulk captioning** — set one caption across every selected shot at once.
+- **Undo delete** — deleted shots stay recoverable for a few seconds via an
+  "Undo" toast before they're actually removed from storage.
+- **Duplicate detection** — pasting, dropping, or capturing an image that's
+  byte-identical to one you already have flags it instead of silently adding
+  a second copy, with a one-click "Add anyway" if you really want both.
+- **Import ZIP** — restore screenshots (with captions and notes) from a
+  previously exported ZIP, e.g. to move your stack to another browser or
+  device. Duplicates are skipped automatically.
+- **Storage usage** — a small usage-vs-quota readout in the toolbar, with a
+  warning toast if you're getting close to what the browser will let this
+  site store.
+- **Keyboard shortcuts** — `Delete`/`Backspace` removes the current
+  selection, `Escape` clears it, `Ctrl/⌘+A` selects everything visible (all
+  skipped while you're typing in a caption/notes/search field).
+- **Installable, offline-capable** — Tuk is a PWA: install it to your dock/
+  home screen, and the app shell (not your screenshots — those are already
+  local) is cached so it opens even without a connection.
 - **Local-first storage** — screenshots are stored as native Blobs in IndexedDB
   (not bloated base64), split into metadata and image stores so editing a caption
   never rewrites the image.
@@ -44,18 +64,23 @@ caption and search them, then export the batch as a ZIP.
 tuk/
 ├── index.html          # page shell + toolbar/dropzone/grid markup
 ├── public/
-│   └── favicon.svg
+│   ├── favicon.svg
+│   ├── icon-192.png     # PWA icons (generated from favicon.svg)
+│   ├── icon-512.png
+│   ├── manifest.webmanifest
+│   └── sw.js             # app-shell offline cache (screenshots stay in IndexedDB)
 └── src/
     ├── main.js          # app state, rendering, lightbox, event wiring
     ├── style.css         # all styling (design tokens at the top)
     ├── db.js              # IndexedDB persistence layer
     ├── capture.js          # getDisplayMedia capture + clipboard read/write
-    ├── export.js            # ZIP export + single-file download
+    ├── export.js            # ZIP export/import + single-file download
     ├── utils.js               # formatting/sort/filter helpers + inline icons
-    └── toast.js                # toast notifications
+    └── toast.js                # toast notifications (incl. action buttons)
 test/
 ├── utils.test.js       # pure formatting/sort/filter helpers
-└── export.test.js      # ZIP export contents + single-file download
+├── export.test.js      # ZIP export/import contents + single-file download
+└── toast.test.js       # toast auto-dismiss + action-button behavior
 ```
 
 ## Development

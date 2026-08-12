@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import JSZip from 'jszip';
-import { exportShotsAsZip, downloadSingle } from '../src/export.js';
+import { exportShotsAsZip, downloadSingle, readShotsFromZip } from '../src/export.js';
 
 function makeShot(overrides = {}) {
   return {
@@ -84,5 +84,56 @@ describe('downloadSingle', () => {
     expect(capturedAnchor.download).toBe('My-Caption.webp');
     expect(capturedAnchor.href).toBe('blob:fake-url');
     appendSpy.mockRestore();
+  });
+});
+
+describe('readShotsFromZip', () => {
+  it('round-trips a ZIP built with the same manifest format exportShotsAsZip writes', async () => {
+    const zip = new JSZip();
+    zip.file('001_First-one.png', new Blob(['png-bytes'], { type: 'image/png' }));
+    zip.file('002_Second-one.jpg', new Blob(['jpg-bytes'], { type: 'image/jpeg' }));
+    zip.file(
+      'captions-and-notes.txt',
+      '001_First-one.png\n' +
+      '  Caption: First one\n' +
+      '  Notes: (none)\n' +
+      '  Size: 800\u00d7600, 14 B\n' +
+      '\n' +
+      '002_Second-one.jpg\n' +
+      '  Caption: Second one\n' +
+      '  Notes: with some notes\n' +
+      '  Size: 400\u00d7300, 9 B\n'
+    );
+    const blob = await zip.generateAsync({ type: 'blob' });
+
+    const results = await readShotsFromZip(blob);
+    expect(results).toHaveLength(2);
+
+    const first = results.find((r) => r.caption === 'First one');
+    expect(first.mime).toBe('image/png');
+    expect(first.notes).toBe(''); // "(none)" in the manifest maps back to empty
+
+    const second = results.find((r) => r.caption === 'Second one');
+    expect(second.mime).toBe('image/jpeg');
+    expect(second.notes).toBe('with some notes');
+  });
+
+  it('skips non-image entries and works fine with no manifest at all', async () => {
+    const zip = new JSZip();
+    zip.file('001_shot.png', new Blob(['png-bytes'], { type: 'image/png' }));
+    zip.file('readme.txt', 'not a screenshot');
+    const blob = await zip.generateAsync({ type: 'blob' });
+
+    const results = await readShotsFromZip(blob);
+    expect(results).toHaveLength(1);
+    expect(results[0].caption).toBe('');
+    expect(results[0].notes).toBe('');
+  });
+
+  it('returns an empty list for a ZIP with no images', async () => {
+    const zip = new JSZip();
+    zip.file('notes.txt', 'just some text');
+    const blob = await zip.generateAsync({ type: 'blob' });
+    expect(await readShotsFromZip(blob)).toEqual([]);
   });
 });

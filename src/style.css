@@ -62,6 +62,14 @@
     color:var(--ink-soft);
     white-space:nowrap;
   }
+  .storage-info{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-faint);
+    white-space:nowrap;
+  }
+  .storage-info.storage-warn{ color:var(--danger); }
+  .storage-info:empty{ display:none; }
   .btn{
     font-family:var(--font-body);
     font-weight:600;
@@ -275,10 +283,25 @@
     box-shadow:0 6px 20px rgba(0,0,0,0.25);
     animation:toast-in .18s ease-out;
     max-width:320px;
+    display:flex; align-items:center; gap:12px;
   }
+  .toast-text{ flex:1; }
   .toast.warn{ background:var(--amber); color:#4a3300; }
   .toast.err{ background:var(--danger); }
+  .toast-action{
+    flex-shrink:0; background:none; border:none; cursor:pointer;
+    color:inherit; font:inherit; font-weight:700; text-decoration:underline;
+    text-underline-offset:2px; padding:2px 0;
+  }
+  .toast-action:hover{ opacity:0.8; }
   @keyframes toast-in{ from{ opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ---------- Duplicate-add flash ---------- */
+  .card.flash{ animation:card-flash 1.2s ease; }
+  @keyframes card-flash{
+    0%, 100%{ outline:2px solid transparent; box-shadow:none; }
+    15%, 60%{ outline:2px solid var(--accent); box-shadow:0 4px 18px rgba(54,82,224,0.35); }
+  }
 
   /* ---------- Lightbox ---------- */
   .lightbox{
@@ -303,6 +326,10 @@
 
   .hidden{ display:none !important; }
 
+  /* Background scroll lock while the lightbox is open — without this, the
+     grid behind the overlay keeps scrolling under a touch drag on mobile. */
+  body.lightbox-open{ overflow:hidden; }
+
   .no-matches{
     grid-column:1/-1; text-align:center; padding:60px 20px;
     color:var(--ink-faint); font-family:var(--font-body); font-size:14px;
@@ -311,8 +338,8 @@
   /* ---------- Floating Paste Button ---------- */
   .floating-paste{
     position:fixed;
-    bottom:24px;
-    right:24px;
+    bottom:calc(24px + env(safe-area-inset-bottom));
+    right:calc(24px + env(safe-area-inset-right));
     z-index:50;
     width:56px;
     height:56px;
@@ -349,6 +376,7 @@
   @media (prefers-reduced-motion: reduce){
     .toast{ animation:none; }
     .floating-paste.has-image{ animation:none; }
+    .card.flash{ animation:none; outline:2px solid var(--accent); }
   }
 
   /* ---------- Keyboard focus ---------- */
@@ -357,8 +385,82 @@
      relying on (or losing) the browser default. */
   .checkbox:focus-visible,
   .icon-btn:focus-visible,
+  .thumb-wrap:focus-visible,
   .lightbox-close:focus-visible,
   .lightbox-nav:focus-visible{
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  .lightbox:focus{ outline:none; } /* programmatic focus for a11y only, no visible ring on the overlay itself */
+
+  /* ==========================================================================
+     Responsive layout
+     Two breakpoints: ~900px (tablet — tighten the toolbar) and ~600px
+     (phone — stack the toolbar into full-width rows, switch the lightbox's
+     side nav arrows to a bottom bar so they don't sit under a thumb's
+     natural grip point, and respect notch/home-indicator safe areas).
+     ========================================================================== */
+  @media (max-width: 900px){
+    .toolbar{ padding:12px 14px; gap:10px; }
+    .search-wrap{ flex:1 1 160px; min-width:120px; }
+    .search-input{ width:100%; }
+    .storage-info{ display:none; } /* secondary info, first to go when space is tight */
+    main{ padding:20px 14px 90px; }
+    .grid{ gap:14px; }
+  }
+
+  @media (max-width: 600px){
+    .toolbar{
+      position:sticky;
+      padding:10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      padding-top:calc(10px + env(safe-area-inset-top, 0px));
+      gap:8px;
+    }
+    .brand{ font-size:17px; margin-right:0; flex:1 0 auto; }
+    .counts{ order:1; flex:1 1 auto; }
+    .search-wrap{ order:2; flex:1 1 100%; }
+    .select#sortSelect{ order:3; flex:1 1 auto; }
+    #btnAddPhoto{ order:4; flex:1 1 100%; justify-content:center; }
+    .capture-group{ order:5; flex:1 1 100%; }
+    .capture-group .btn{ flex:1 1 auto; justify-content:center; }
+    #btnPasteClipboard{ order:6; flex:1 1 100%; justify-content:center; }
+    .switch-wrap{ order:7; flex:1 1 100%; justify-content:center; padding:4px 0; }
+    #btnSelectAll{ order:8; flex:1 1 calc(50% - 4px); justify-content:center; }
+    #btnBulkCaption{ order:9; flex:1 1 calc(50% - 4px); justify-content:center; }
+    #btnImportZip{ order:10; flex:1 1 calc(50% - 4px); justify-content:center; }
+    #btnExportZip{ order:11; flex:1 1 calc(50% - 4px); justify-content:center; }
+    #btnDelete{ order:12; flex:1 1 100%; justify-content:center; }
+
+    /* Buttons/inputs get a real touch target — 44px is the usual minimum. */
+    .btn, .select, .search-wrap{ min-height:44px; }
+    .switch{ width:38px; height:23px; }
+    .switch-track::after{ width:19px; height:19px; }
+    .switch input:checked + .switch-track::after{ transform:translateX(15px); }
+
+    main{ padding:16px 12px 90px; }
+    .dropzone{ margin-top:8vh; padding:44px 18px; }
+    .grid{ grid-template-columns:1fr; gap:12px; }
+    .thumb-wrap{ height:auto; max-height:60vh; aspect-ratio:4/3; }
+
+    .floating-paste{ width:52px; height:52px; }
+
+    .toasts{
+      left:12px; right:12px; bottom:calc(88px + env(safe-area-inset-bottom, 0px));
+    }
+    .toast{ max-width:none; }
+
+    /* ---- Lightbox: side arrows are awkward to reach one-handed on a
+       phone, so move them into a bottom control bar next to Close instead,
+       and shrink the image to leave room for it. ---- */
+    .lightbox{ padding:16px; padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .lightbox img{ max-height:60vh; }
+    .lightbox-close{
+      top:calc(16px + env(safe-area-inset-top, 0px)); right:16px;
+    }
+    .lightbox-nav{
+      position:fixed; top:auto; bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+      transform:none; width:48px; height:48px;
+    }
+    .lightbox-nav.prev{ left:calc(50% - 60px); }
+    .lightbox-nav.next{ left:calc(50% + 12px); right:auto; }
   }

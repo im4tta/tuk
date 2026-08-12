@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtBytes, timeAgo, extFromMime, sanitize, makeId, filterShotsByQuery, sortShots } from '../src/utils.js';
+import { fmtBytes, timeAgo, extFromMime, mimeFromExt, sanitize, makeId, filterShotsByQuery, sortShots } from '../src/utils.js';
 
 describe('fmtBytes', () => {
   it('formats bytes under 1KB', () => {
@@ -40,6 +40,28 @@ describe('extFromMime', () => {
   it('falls back to png for unrecognized or missing mime types', () => {
     expect(extFromMime('image/png')).toBe('png');
     expect(extFromMime(undefined)).toBe('png');
+  });
+});
+
+describe('mimeFromExt', () => {
+  it('maps known extensions to their mime types', () => {
+    expect(mimeFromExt('shot.jpg')).toBe('image/jpeg');
+    expect(mimeFromExt('shot.jpeg')).toBe('image/jpeg');
+    expect(mimeFromExt('shot.webp')).toBe('image/webp');
+    expect(mimeFromExt('shot.gif')).toBe('image/gif');
+    expect(mimeFromExt('shot.bmp')).toBe('image/bmp');
+    expect(mimeFromExt('shot.avif')).toBe('image/avif');
+    expect(mimeFromExt('shot.svg')).toBe('image/svg+xml');
+  });
+  it('is case-insensitive and falls back to png for unknown extensions', () => {
+    expect(mimeFromExt('SHOT.JPG')).toBe('image/jpeg');
+    expect(mimeFromExt('shot.png')).toBe('image/png');
+    expect(mimeFromExt('shot.txt')).toBe('image/png');
+  });
+  it('round-trips with extFromMime for every known type', () => {
+    ['image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/avif', 'image/png'].forEach((mime) => {
+      expect(mimeFromExt('file.' + extFromMime(mime))).toBe(mime);
+    });
   });
 });
 

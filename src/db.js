@@ -87,7 +87,11 @@ function metaRecord(shot) {
     sizeBytes: shot.sizeBytes,
     caption: shot.caption,
     notes: shot.notes,
-    createdAt: shot.createdAt
+    createdAt: shot.createdAt,
+    // Content hash used for duplicate detection. Shots saved before this
+    // field existed simply come back as hash: undefined, which the
+    // duplicate check treats as "unknown" rather than a match.
+    hash: shot.hash || null
   };
 }
 
