@@ -21,6 +21,7 @@ const addPhotoInput = document.getElementById('addPhotoInput');
 const floatingPaste = document.getElementById('floatingPaste');
 const toggleAutoCopy = document.getElementById('toggleAutoCopy');
 const searchInput = document.getElementById('searchInput');
+const btnClearSearch = document.getElementById('btnClearSearch');
 const sortSelect = document.getElementById('sortSelect');
 const btnBulkCaption = document.getElementById('btnBulkCaption');
 const btnImportZip = document.getElementById('btnImportZip');
@@ -111,6 +112,96 @@ function onActivate(el, handler) {
   el.addEventListener('click', handler);
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); }
+  });
+}
+
+// Shared Tab/Shift+Tab trap for the lightbox and the modal dialog below —
+// keeps focus cycling within the open dialog instead of leaking to the
+// (still-present) page behind it.
+function getFocusablesWithin(container) {
+  return Array.from(container.querySelectorAll('[role="button"][tabindex], button, [href], input, select, textarea'))
+    .filter((el) => !el.disabled);
+}
+function trapTabKey(e, container) {
+  const focusables = getFocusablesWithin(container);
+  if (focusables.length === 0) { e.preventDefault(); return; }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  else if (!container.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+}
+
+/**
+ * A small accessible modal dialog — used in place of window.prompt(),
+ * which silently no-ops in an installed iOS home-screen PWA (standalone
+ * display mode there simply doesn't implement prompt()/alert()). Follows
+ * the same dialog pattern as the lightbox: focus moves in on open, Tab is
+ * trapped inside, Escape/backdrop-click cancels, and focus is restored to
+ * whatever opened it on close.
+ * @returns {Promise<string|null>} the entered value, or null if cancelled
+ */
+function promptDialog({ title, confirmLabel, initialValue }) {
+  return new Promise((resolve) => {
+    const triggerEl = document.activeElement;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', title);
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+
+    const heading = document.createElement('h3');
+    heading.className = 'modal-title';
+    heading.textContent = title;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'modal-input';
+    input.value = initialValue || '';
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'btn primary';
+    okBtn.textContent = confirmLabel || 'OK';
+    actions.appendChild(cancelBtn);
+    actions.appendChild(okBtn);
+
+    box.appendChild(heading);
+    box.appendChild(input);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+
+    function cleanup(result) {
+      overlay.remove();
+      document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKeydown);
+      if (triggerEl && document.contains(triggerEl)) triggerEl.focus();
+      resolve(result);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cleanup(null); return; }
+      if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); cleanup(input.value); return; }
+      if (e.key === 'Tab') trapTabKey(e, overlay);
+    }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+    cancelBtn.addEventListener('click', () => cleanup(null));
+    okBtn.addEventListener('click', () => cleanup(input.value));
+    document.addEventListener('keydown', onKeydown);
+
+    document.body.appendChild(overlay);
+    document.body.classList.add('modal-open');
+    input.focus();
+    input.select();
   });
 }
 
@@ -385,7 +476,37 @@ function updateToolbar(visible) {
   btnSelectAll.textContent = allVisibleSelected ? 'Deselect all' : 'Select all';
 }
 
+// render() rebuilds the whole grid from scratch on every state change
+// (selection toggle, delete, sort, search...), which — with nothing to
+// counter it — drops keyboard focus to <body> every single time, making it
+// impossible to Tab/arrow through selecting several shots. These two
+// functions snapshot which control (by card id + role) had focus before
+// the rebuild and put focus back afterward; if that exact card is gone
+// (e.g. it was just deleted), focus falls back to whichever card now
+// occupies the same grid position, so deleting a shot lands you on "the
+// next one" instead of losing your place entirely.
+function captureFocusRef() {
+  const active = document.activeElement;
+  const role = active && active.dataset && active.dataset.focusRole;
+  if (!role) return null;
+  const card = active.closest('.card');
+  if (!card) return null;
+  return { id: card.dataset.id, role, idx: Array.from(grid.children).indexOf(card) };
+}
+function restoreFocusRef(ref) {
+  if (!ref) return;
+  let card = grid.querySelector('.card[data-id="' + ref.id + '"]');
+  if (!card && ref.idx >= 0) {
+    const idx = Math.min(ref.idx, grid.children.length - 1);
+    card = grid.children[idx] || null;
+  }
+  if (!card) return;
+  const el = card.querySelector('[data-focus-role="' + ref.role + '"]') || card.querySelector('[data-focus-role="thumb"]');
+  if (el) el.focus();
+}
+
 function render() {
+  const focusRef = captureFocusRef();
   const visible = visibleShots();
   updateToolbar(visible);
   dropzone.classList.toggle('hidden', shots.length > 0);
@@ -415,6 +536,7 @@ function render() {
     thumbWrap.setAttribute('role', 'button');
     thumbWrap.setAttribute('tabindex', '0');
     thumbWrap.setAttribute('aria-label', 'View screenshot fullsize' + (shot.caption ? ': ' + shot.caption : ''));
+    thumbWrap.dataset.focusRole = 'thumb';
     onActivate(thumbWrap, (e) => { if (e.target === thumbWrap || e.target === img) openLightbox(visible, i, thumbWrap); });
 
     const checkbox = document.createElement('div');
@@ -425,6 +547,7 @@ function render() {
     checkbox.setAttribute('aria-checked', String(selected.has(shot.id)));
     checkbox.setAttribute('aria-label', 'Select screenshot');
     checkbox.title = 'Shift+click to select a range';
+    checkbox.dataset.focusRole = 'checkbox';
     onActivate(checkbox, (e) => { e.stopPropagation(); toggleSelect(shot.id, e, i, visible); });
 
     const iconRow = document.createElement('div');
@@ -437,6 +560,7 @@ function render() {
     dlBtn.setAttribute('role', 'button');
     dlBtn.setAttribute('tabindex', '0');
     dlBtn.setAttribute('aria-label', 'Download PNG');
+    dlBtn.dataset.focusRole = 'download';
     onActivate(dlBtn, (e) => { e.stopPropagation(); downloadSingle(shot); });
 
     const copyBtn = document.createElement('div');
@@ -446,6 +570,7 @@ function render() {
     copyBtn.setAttribute('role', 'button');
     copyBtn.setAttribute('tabindex', '0');
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
+    copyBtn.dataset.focusRole = 'copy';
     onActivate(copyBtn, (e) => { e.stopPropagation(); copyShotToClipboard(shot); });
 
     const delBtn = document.createElement('div');
@@ -455,6 +580,7 @@ function render() {
     delBtn.setAttribute('role', 'button');
     delBtn.setAttribute('tabindex', '0');
     delBtn.setAttribute('aria-label', 'Delete screenshot');
+    delBtn.dataset.focusRole = 'delete';
     onActivate(delBtn, (e) => { e.stopPropagation(); deleteShots([shot.id]); });
 
     iconRow.appendChild(dlBtn);
@@ -472,6 +598,7 @@ function render() {
     captionInput.type = 'text';
     captionInput.placeholder = 'Add a caption\u2026';
     captionInput.value = shot.caption;
+    captionInput.dataset.focusRole = 'caption';
     captionInput.addEventListener('input', () => { shot.caption = captionInput.value; scheduleSave(shot); });
 
     const notesInput = document.createElement('textarea');
@@ -479,11 +606,12 @@ function render() {
     notesInput.placeholder = 'Notes\u2026';
     notesInput.rows = 2;
     notesInput.value = shot.notes;
+    notesInput.dataset.focusRole = 'notes';
     notesInput.addEventListener('input', () => { shot.notes = notesInput.value; scheduleSave(shot); });
 
     const metaRow = document.createElement('div');
     metaRow.className = 'meta-row';
-    metaRow.innerHTML = '<span>' + shot.width + '\u00d7' + shot.height + ' · ' + fmtBytes(shot.sizeBytes) + '</span><span>' + timeAgo(shot.createdAt) + '</span>';
+    metaRow.innerHTML = '<span>' + shot.width + '\u00d7' + shot.height + ' · ' + fmtBytes(shot.sizeBytes) + '</span><span class="meta-time">' + timeAgo(shot.createdAt) + '</span>';
 
     body.appendChild(captionInput);
     body.appendChild(notesInput);
@@ -493,6 +621,8 @@ function render() {
     card.appendChild(body);
     grid.appendChild(card);
   });
+
+  restoreFocusRef(focusRef);
 }
 
 // ---------- Lightbox ----------
@@ -503,14 +633,6 @@ function render() {
 // focus to the trigger on close so keyboard/screen-reader users land back
 // where they started instead of at the top of the page.
 let lightboxTriggerEl = null;
-
-function getLightboxFocusables(overlay) {
-  // Every control the lightbox renders is always visible when present (no
-  // hidden buttons to filter out), so no offsetParent-based visibility
-  // check is needed — and it would misfire anyway, since offsetParent is
-  // null for position:fixed elements (which these all are) in most browsers.
-  return Array.from(overlay.querySelectorAll('[role="button"][tabindex], button, [href], input, select, textarea'));
-}
 
 function openLightbox(list, index, triggerEl) {
   lightboxTriggerEl = triggerEl || document.activeElement || null;
@@ -621,13 +743,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Tab') {
     const overlay = document.querySelector('.lightbox');
     if (!overlay) return;
-    const focusables = getLightboxFocusables(overlay);
-    if (focusables.length === 0) { e.preventDefault(); return; }
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    trapTabKey(e, overlay);
   }
 });
 
@@ -745,10 +861,13 @@ btnDelete.addEventListener('click', () => {
   deleteShots(Array.from(selected));
 });
 
-btnBulkCaption.addEventListener('click', () => {
+btnBulkCaption.addEventListener('click', async () => {
   if (selected.size === 0) return;
   const count = selected.size;
-  const value = window.prompt('Set caption for ' + count + ' selected screenshot' + (count > 1 ? 's' : '') + ':', '');
+  const value = await promptDialog({
+    title: 'Set caption for ' + count + ' selected screenshot' + (count > 1 ? 's' : ''),
+    confirmLabel: 'Set caption'
+  });
   if (value === null) return; // cancelled
   shots.forEach((s) => {
     if (selected.has(s.id)) {
@@ -809,10 +928,28 @@ window.addEventListener('focus', refreshClipboardHint);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshClipboardHint(); });
 
 let searchDebounce;
+function updateClearSearchVisibility() {
+  btnClearSearch.classList.toggle('hidden', searchInput.value.length === 0);
+}
+function clearSearch() {
+  searchInput.value = '';
+  searchTerm = '';
+  updateClearSearchVisibility();
+  render();
+}
 searchInput.addEventListener('input', () => {
+  updateClearSearchVisibility();
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => { searchTerm = searchInput.value.trim(); render(); }, 120);
 });
+// Escape while the search field is focused clears it rather than doing
+// nothing — the global Escape handler further down deliberately skips
+// text inputs (so it doesn't fight normal editing), so without this the
+// only way to clear a search was deleting the text by hand.
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchInput.value) { e.preventDefault(); clearSearch(); }
+});
+btnClearSearch.addEventListener('click', () => { clearSearch(); searchInput.focus(); });
 
 // Ctrl/⌘+Shift+S triggers a screen capture from anywhere on the page.
 document.addEventListener('keydown', (e) => {
@@ -846,6 +983,49 @@ document.addEventListener('keydown', (e) => {
     visibleShots().forEach((s) => selected.add(s.id));
     render();
   }
+});
+
+// Keyboard navigation between grid cards, once focus is already on one of
+// a card's button-like controls (thumbnail/checkbox/download/copy/delete).
+// Deliberately excludes the caption/notes text fields — those are real
+// <input>/<textarea> elements where arrow/Home/End keys must keep doing
+// normal cursor movement, not jump between cards.
+document.addEventListener('keydown', (e) => {
+  if (lightboxIndex >= 0) return;
+  const isArrow = e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown';
+  const isJump = e.key === 'Home' || e.key === 'End';
+  if (!isArrow && !isJump) return;
+  const active = document.activeElement;
+  const tag = active && active.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const role = active && active.dataset && active.dataset.focusRole;
+  if (!role) return;
+  const card = active.closest('.card');
+  if (!card) return;
+
+  const cards = Array.from(grid.children).filter((c) => c.classList.contains('card'));
+  const idx = cards.indexOf(card);
+  if (idx === -1) return;
+
+  let targetIdx;
+  if (e.key === 'Home') targetIdx = 0;
+  else if (e.key === 'End') targetIdx = cards.length - 1;
+  else if (e.key === 'ArrowLeft') targetIdx = idx - 1;
+  else if (e.key === 'ArrowRight') targetIdx = idx + 1;
+  else {
+    // Up/Down step by a full row — inferred from how many cards share the
+    // first card's vertical position, since the grid's column count is
+    // responsive and not something we track in JS.
+    const firstTop = cards[0].getBoundingClientRect().top;
+    let cols = 1;
+    for (let i = 1; i < cards.length && Math.abs(cards[i].getBoundingClientRect().top - firstTop) < 2; i++) cols++;
+    targetIdx = e.key === 'ArrowUp' ? idx - cols : idx + cols;
+  }
+  if (targetIdx < 0 || targetIdx >= cards.length) return;
+  e.preventDefault();
+  const targetCard = cards[targetIdx];
+  const el = targetCard.querySelector('[data-focus-role="' + role + '"]') || targetCard.querySelector('[data-focus-role="thumb"]');
+  if (el) el.focus();
 });
 
 // ---------- Share-target pickup ----------
@@ -884,6 +1064,22 @@ async function pickUpSharedImages() {
   }
 }
 
+// "3m ago"-style labels only ever get set at render() time, so on an idle
+// tab (nothing selecting/deleting/searching to trigger a re-render) they'd
+// sit at "just now" forever. Touch-update just the time text on an
+// interval instead of calling render() — a full rebuild here would cost
+// focus (even with the restore logic, it's needless churn) for a change
+// that's purely cosmetic text.
+function refreshRelativeTimes() {
+  const byId = new Map(shots.map((s) => [s.id, s]));
+  grid.querySelectorAll('.meta-time').forEach((el) => {
+    const shot = byId.get(el.closest('.card').dataset.id);
+    if (shot) el.textContent = timeAgo(shot.createdAt);
+  });
+}
+setInterval(refreshRelativeTimes, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelativeTimes(); });
+
 // ---------- Init ----------
 loadSettings();
 applyFeatureAvailability();
@@ -896,6 +1092,22 @@ loadAll()
 // PWA install/offline support. Skipped in dev so Vite's own dev-server
 // caching/HMR isn't fighting a service worker for the same requests.
 if ('serviceWorker' in navigator && !import.meta.env.DEV) {
+  // sw.js calls skipWaiting()/clients.claim() as soon as a new version
+  // activates, which silently swaps the controller out from under any
+  // already-open tab. That's fine for static assets, but worth surfacing
+  // rather than leaving someone on a stale build with no way to know a
+  // newer one is a click away — hence the (non-forced) refresh prompt below.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloadPrompted = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloadPrompted) return; // first-ever install isn't "an update"
+    reloadPrompted = true;
+    toast('Tuk was updated in the background.', null, {
+      duration: 15000,
+      action: { label: 'Refresh', onClick: () => location.reload() }
+    });
+  });
+
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support just won't be available */ });
   });

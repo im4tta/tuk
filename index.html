@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Tuk — paste, capture, keep</title>
 <meta name="description" content="Tuk is a fast, local-first screenshot scratchpad. Paste, capture your screen at up to 4× resolution, caption, and export — all in your browser, nothing uploaded.">
-<meta name="theme-color" content="#3652E0">
+<meta name="theme-color" content="#3652E0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14161C" media="(prefers-color-scheme: dark)">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Tuk — paste, capture, keep">
@@ -31,12 +32,15 @@
       Tuk
     </div>
 
-    <span class="counts" id="counts">0 shots</span>
+    <span class="counts" id="counts" aria-live="polite">0 shots</span>
     <span class="storage-info" id="storageInfo"></span>
 
     <div class="search-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input type="text" id="searchInput" class="search-input" placeholder="Search captions & notes…" aria-label="Search captions and notes">
+      <button type="button" class="search-clear hidden" id="btnClearSearch" title="Clear search" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
 
     <select class="select" id="sortSelect" title="Sort order" aria-label="Sort order">

@@ -16,6 +16,39 @@
     --font-display:'Space Grotesk', sans-serif;
     --font-body:'Inter', sans-serif;
     --font-mono:'IBM Plex Mono', monospace;
+    /* Theme-dependent extras that aren't simple recolors — a translucent
+       toolbar tint, the dot-grid backdrop, the transparency checkerboard on
+       thumbnails, and the toast surface (which intentionally stays dark in
+       both themes, so it needs its own tokens rather than reusing --ink). */
+    --surface-translucent:rgba(237,239,243,0.85);
+    --bg-dot:rgba(28,34,48,0.05);
+    --checker-a:#f2f3f6;
+    --checker-b:#ffffff;
+    --toast-bg:#1C2230;
+    --toast-text:#ffffff;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#14161C;
+      --surface:#1D2028;
+      --ink:#EBEDF2;
+      --ink-soft:#9BA3B2;
+      --ink-faint:#6B7280;
+      --accent:#5C74F2;
+      --accent-hover:#7488F5;
+      --accent-soft:rgba(92,116,242,0.22);
+      --amber:#F5A524;
+      --amber-soft:rgba(245,165,36,0.18);
+      --danger:#F0685C;
+      --danger-soft:rgba(240,104,92,0.18);
+      --border:#2C3039;
+      --surface-translucent:rgba(20,22,28,0.85);
+      --bg-dot:rgba(255,255,255,0.05);
+      --checker-a:#262A34;
+      --checker-b:#1A1D24;
+      --toast-bg:#080910;
+    }
   }
   *{box-sizing:border-box;}
   body{margin:0;}
@@ -24,7 +57,7 @@
     color:var(--ink);
     font-family:var(--font-body);
     background-image:
-      radial-gradient(circle, rgba(28,34,48,0.05) 1px, transparent 1px);
+      radial-gradient(circle, var(--bg-dot) 1px, transparent 1px);
     background-size:22px 22px;
     min-height:100vh;
   }
@@ -34,7 +67,7 @@
     position:sticky; top:0; z-index:40;
     display:flex; align-items:center; gap:14px;
     padding:14px 22px;
-    background:rgba(237,239,243,0.85);
+    background:var(--surface-translucent);
     backdrop-filter:blur(10px);
     border-bottom:1px solid var(--border);
     flex-wrap:wrap;
@@ -106,6 +139,14 @@
     width:150px; min-width:0;
   }
   .search-input::placeholder{ color:var(--ink-faint); }
+  .search-clear{
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; width:18px; height:18px; padding:0; margin:0;
+    border:none; background:none; color:var(--ink-faint); cursor:pointer;
+    border-radius:50%;
+  }
+  .search-clear:hover{ color:var(--ink); }
+  .search-clear svg{ width:12px; height:12px; }
 
   .select{
     font-family:var(--font-body); font-weight:600; font-size:13px;
@@ -203,11 +244,11 @@
     position:relative;
     height:168px;
     background:
-      linear-gradient(45deg, #f2f3f6 25%, transparent 25%) -8px 0/16px 16px,
-      linear-gradient(-45deg, #f2f3f6 25%, transparent 25%) -8px 0/16px 16px,
-      linear-gradient(45deg, transparent 75%, #f2f3f6 75%) -8px 0/16px 16px,
-      linear-gradient(-45deg, transparent 75%, #f2f3f6 75%) -8px 0/16px 16px,
-      #fff;
+      linear-gradient(45deg, var(--checker-a) 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(-45deg, var(--checker-a) 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(45deg, transparent 75%, var(--checker-a) 75%) -8px 0/16px 16px,
+      linear-gradient(-45deg, transparent 75%, var(--checker-a) 75%) -8px 0/16px 16px,
+      var(--checker-b);
     display:flex;align-items:center;justify-content:center;
     cursor:zoom-in;
     border-bottom:1px solid var(--border);
@@ -278,7 +319,7 @@
   /* ---------- Toast ---------- */
   .toasts{ position:fixed; bottom:20px; right:20px; z-index:100; display:flex; flex-direction:column; gap:8px; }
   .toast{
-    background:var(--ink); color:#fff; padding:10px 15px; border-radius:9px;
+    background:var(--toast-bg); color:var(--toast-text); padding:10px 15px; border-radius:9px;
     font-size:13px; font-family:var(--font-body); font-weight:500;
     box-shadow:0 6px 20px rgba(0,0,0,0.25);
     animation:toast-in .18s ease-out;
@@ -326,9 +367,37 @@
 
   .hidden{ display:none !important; }
 
-  /* Background scroll lock while the lightbox is open — without this, the
-     grid behind the overlay keeps scrolling under a touch drag on mobile. */
-  body.lightbox-open{ overflow:hidden; }
+  /* ---------- Modal dialog (bulk caption, etc.) ----------
+     A real in-page dialog rather than window.prompt(): prompt()/alert()
+     silently no-op in an installed iOS home-screen PWA (standalone display
+     mode there doesn't implement them at all), so this is required for the
+     feature to work once someone's added Tuk to their home screen — not
+     just a nicer-looking option. */
+  .modal-overlay{
+    position:fixed; inset:0; z-index:95;
+    background:rgba(20,22,30,0.55);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .modal-box{
+    background:var(--surface); border-radius:var(--radius);
+    padding:22px; width:100%; max-width:360px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-title{
+    margin:0 0 14px; font-family:var(--font-display); font-size:16px; color:var(--ink);
+  }
+  .modal-input{
+    width:100%; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--border); background:var(--bg); color:var(--ink);
+    font-family:var(--font-body); font-size:14px;
+  }
+  .modal-input:focus{ outline:none; border-color:var(--accent); }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+
+  /* Background scroll lock while a dialog is open — without this, the grid
+     behind the overlay keeps scrolling under a touch drag on mobile. */
+  body.lightbox-open, body.modal-open{ overflow:hidden; }
 
   .no-matches{
     grid-column:1/-1; text-align:center; padding:60px 20px;
@@ -387,7 +456,8 @@
   .icon-btn:focus-visible,
   .thumb-wrap:focus-visible,
   .lightbox-close:focus-visible,
-  .lightbox-nav:focus-visible{
+  .lightbox-nav:focus-visible,
+  .modal-input:focus-visible{
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -463,4 +533,7 @@
     }
     .lightbox-nav.prev{ left:calc(50% - 60px); }
     .lightbox-nav.next{ left:calc(50% + 12px); right:auto; }
+
+    .modal-box{ max-width:none; }
+    .modal-actions .btn{ flex:1 1 0; }
   }
