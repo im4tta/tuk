@@ -27,6 +27,7 @@ const btnBulkCaption = document.getElementById('btnBulkCaption');
 const btnImportZip = document.getElementById('btnImportZip');
 const importInput = document.getElementById('importInput');
 const storageInfoEl = document.getElementById('storageInfo');
+const btnThemeToggle = document.getElementById('btnThemeToggle');
 
 // ---------- State ----------
 /** @type {Array<{id:string,url:string,blob:Blob,mime:string,width:number,height:number,sizeBytes:number,caption:string,notes:string,createdAt:number,hash:?string}>} */
@@ -103,6 +104,67 @@ function saveSettings() {
     }));
   } catch { /* non-fatal */ }
 }
+
+// ---------- Theme ----------
+// Three states, cycled by the toggle button: null ("system", the default —
+// follows the OS/browser preference and keeps tracking it live) → 'light' →
+// 'dark' → back to null. Only light/dark are ever written to localStorage;
+// "system" is represented by the key being absent so a fresh browser with
+// no saved preference still just follows the OS, matching pre-toggle behavior.
+const THEME_KEY = 'tuk-theme';
+const THEME_ICONS = {
+  system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a7 7 0 0 0 9.9 9.9z"/></svg>'
+};
+const THEME_LABELS = { system: 'System', light: 'Light', dark: 'Dark' };
+const prefersDarkMql = window.matchMedia('(prefers-color-scheme: dark)');
+
+function getStoredTheme() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'light' || v === 'dark' ? v : null;
+  } catch { return null; }
+}
+function resolveTheme(pref) {
+  return pref === 'light' || pref === 'dark' ? pref : (prefersDarkMql.matches ? 'dark' : 'light');
+}
+function applyTheme(pref) {
+  if (pref === 'light' || pref === 'dark') document.documentElement.setAttribute('data-theme', pref);
+  else document.documentElement.removeAttribute('data-theme');
+
+  const resolved = resolveTheme(pref);
+  document.querySelectorAll('meta[name="theme-color"]')
+    .forEach((m) => m.setAttribute('content', resolved === 'dark' ? '#14161C' : '#3652E0'));
+
+  if (btnThemeToggle) {
+    const key = pref || 'system';
+    btnThemeToggle.innerHTML = THEME_ICONS[key];
+    const label = key === 'system' ? `System (currently ${resolved})` : THEME_LABELS[key];
+    btnThemeToggle.title = `Theme: ${label} — click to change`;
+    btnThemeToggle.setAttribute('aria-label', `Theme: ${label}. Click to switch.`);
+  }
+}
+function setTheme(pref, { animate = true } = {}) {
+  if (animate) {
+    document.documentElement.classList.add('theme-transitioning');
+    setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 220);
+  }
+  try {
+    if (pref) localStorage.setItem(THEME_KEY, pref);
+    else localStorage.removeItem(THEME_KEY);
+  } catch { /* non-fatal — theme just won't persist across visits */ }
+  applyTheme(pref);
+}
+function cycleTheme() {
+  const order = [null, 'light', 'dark'];
+  const next = order[(order.indexOf(getStoredTheme()) + 1) % order.length];
+  setTheme(next);
+}
+if (btnThemeToggle) onActivate(btnThemeToggle, cycleTheme);
+// While following "system", keep the icon/meta color live if the OS theme
+// changes underneath the open tab (e.g. auto dark mode kicking in at sunset).
+prefersDarkMql.addEventListener('change', () => { if (!getStoredTheme()) applyTheme(null); });
 
 // ---------- Accessibility helper ----------
 // Native <button> elements get Enter/Space activation for free; the compact
@@ -1081,6 +1143,7 @@ setInterval(refreshRelativeTimes, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelativeTimes(); });
 
 // ---------- Init ----------
+applyTheme(getStoredTheme()); // no animate flag needed here — it's already the state set by the anti-flash inline script in index.html
 loadSettings();
 applyFeatureAvailability();
 refreshClipboardHint();

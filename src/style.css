@@ -28,8 +28,11 @@
     --toast-text:#ffffff;
     color-scheme: light dark;
   }
+  /* Dark palette applies when the OS prefers dark and the user hasn't
+     manually overridden to light, OR when the user has manually chosen
+     dark regardless of OS preference (see [data-theme] below). */
   @media (prefers-color-scheme: dark){
-    :root{
+    :root:not([data-theme="light"]){
       --bg:#14161C;
       --surface:#1D2028;
       --ink:#EBEDF2;
@@ -49,6 +52,33 @@
       --checker-b:#1A1D24;
       --toast-bg:#080910;
     }
+  }
+  /* Native browser chrome (scrollbars, <select> popups, date pickers) reads
+     color-scheme, not our CSS variables — without this it keeps following
+     the OS even after an explicit override, so light-on-dark or
+     dark-on-light native widgets would mismatch the rest of the page. */
+  :root[data-theme="light"]{ color-scheme:light; }
+  :root[data-theme="dark"]{ color-scheme:dark; }
+
+  :root[data-theme="dark"]{
+    --bg:#14161C;
+    --surface:#1D2028;
+    --ink:#EBEDF2;
+    --ink-soft:#9BA3B2;
+    --ink-faint:#6B7280;
+    --accent:#5C74F2;
+    --accent-hover:#7488F5;
+    --accent-soft:rgba(92,116,242,0.22);
+    --amber:#F5A524;
+    --amber-soft:rgba(245,165,36,0.18);
+    --danger:#F0685C;
+    --danger-soft:rgba(240,104,92,0.18);
+    --border:#2C3039;
+    --surface-translucent:rgba(20,22,28,0.85);
+    --bg-dot:rgba(255,255,255,0.05);
+    --checker-a:#262A34;
+    --checker-b:#1A1D24;
+    --toast-bg:#080910;
   }
   *{box-sizing:border-box;}
   body{margin:0;}
@@ -125,6 +155,24 @@
   .btn.danger:hover{ border-color:var(--danger); background:var(--danger-soft); }
   .btn:disabled{ opacity:0.4; cursor:not-allowed; }
   .btn svg{width:14px;height:14px;flex-shrink:0;}
+  /* Scoped to .btn.icon-btn (not bare .icon-btn) — the per-card
+     download/copy/delete controls already use an unrelated .icon-btn class
+     with their own sizing further down; without this extra selector
+     specificity this rule would leak onto them too. */
+  .btn.icon-btn{
+    padding:8px; width:34px; height:34px;
+    display:inline-flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .btn.icon-btn svg{width:16px;height:16px;}
+
+  /* Applied briefly (via JS) while a theme switch is in flight, so colors
+     cross-fade instead of snapping — removed right after so it never
+     interferes with unrelated transitions (card hovers, button presses). */
+  .theme-transitioning,
+  .theme-transitioning *{
+    transition:background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease !important;
+  }
 
   .search-wrap{
     display:flex; align-items:center; gap:6px;
@@ -446,6 +494,7 @@
     .toast{ animation:none; }
     .floating-paste.has-image{ animation:none; }
     .card.flash{ animation:none; outline:2px solid var(--accent); }
+    .theme-transitioning, .theme-transitioning *{ transition:none !important; }
   }
 
   /* ---------- Keyboard focus ---------- */
@@ -457,7 +506,9 @@
   .thumb-wrap:focus-visible,
   .lightbox-close:focus-visible,
   .lightbox-nav:focus-visible,
-  .modal-input:focus-visible{
+  .modal-input:focus-visible,
+  .btn:focus-visible,
+  .select:focus-visible{
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }

@@ -7,6 +7,16 @@
 <meta name="description" content="Tuk is a fast, local-first screenshot scratchpad. Paste, capture your screen at up to 4× resolution, caption, and export — all in your browser, nothing uploaded.">
 <meta name="theme-color" content="#3652E0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14161C" media="(prefers-color-scheme: dark)">
+<script>
+  // Apply any saved theme override before first paint, so there's no flash
+  // of the wrong theme while main.js is still loading as a module.
+  (function () {
+    try {
+      var t = localStorage.getItem('tuk-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* localStorage unavailable (private mode, etc.) — system theme stands */ }
+  })();
+</script>
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Tuk — paste, capture, keep">
@@ -31,6 +41,8 @@
       </div>
       Tuk
     </div>
+
+    <button type="button" class="btn icon-btn" id="btnThemeToggle"></button>
 
     <span class="counts" id="counts" aria-live="polite">0 shots</span>
     <span class="storage-info" id="storageInfo"></span>
