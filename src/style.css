@@ -163,6 +163,11 @@
     padding:8px; width:34px; height:34px;
     display:inline-flex; align-items:center; justify-content:center;
     flex-shrink:0;
+    /* The bare .icon-btn rule below (used by the per-card controls) sets
+       opacity:0 + position:absolute for its reveal-on-hover behavior. It
+       leaks onto this toolbar button too — without these overrides the
+       theme toggle would be invisible and ripped out of the flex flow. */
+    opacity:1; position:static;
   }
   .btn.icon-btn svg{width:16px;height:16px;}
 
