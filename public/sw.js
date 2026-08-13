@@ -4,7 +4,7 @@
 // screenshots live in IndexedDB, which this file never touches. Bump
 // CACHE_NAME on any shell change you want clients to pick up immediately;
 // stale caches from older versions are swept in `activate`.
-const CACHE_NAME = 'tuk-shell-v2';
+const CACHE_NAME = 'tuk-shell-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 // Holds image(s) handed to Tuk via the OS share sheet (see handleShareTarget
